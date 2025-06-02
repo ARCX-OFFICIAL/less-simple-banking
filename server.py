@@ -181,6 +181,9 @@ def buy_stock():
     deduct = min(users[investor].get("investment_balance", 0), total_cost)
     users[investor]["investment_balance"] -= deduct
     remaining = total_cost - deduct
+    # If remaining amount is greater than 0, record a transaction
+    if remaining > 0:
+        transactions.append({"sender": investor, "receiver": account, "amount": remaining, "transaction_id": f"buy_{investor}_{account}_{len(transactions)}"})
     # Do NOT add to company's main balance, only to investment_balance
     # Do NOT record a transaction for this investment (so main balance doesn't increase)
     users[account]["investment_balance"] += total_cost
@@ -275,7 +278,7 @@ def sell_stock():
     if price_per_share <= 0:
         return jsonify({"status": "Failure", "message": "Company has no value, cannot sell shares"})
     total_payout = shares * price_per_share
-
+    print(f"Total payout for {shares} shares at {price_per_share} per share: {total_payout}")
     # Check if company has enough regular balance
     if company_balance < total_payout:
         return jsonify({"status": "Failure", "message": "Company does not have enough regular funds to buy back shares"})
