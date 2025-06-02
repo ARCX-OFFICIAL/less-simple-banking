@@ -181,17 +181,20 @@ def buy_stock():
     deduct = min(users[investor].get("investment_balance", 0), total_cost)
     users[investor]["investment_balance"] -= deduct
     remaining = total_cost - deduct
-    # If remaining amount is greater than 0, record a transaction
     if remaining > 0:
-        transactions.append({"sender": investor, "receiver": account, "amount": remaining, "transaction_id": f"buy_{investor}_{account}_{len(transactions)}"})
-    # Do NOT add to company's main balance, only to investment_balance
-    # Do NOT record a transaction for this investment (so main balance doesn't increase)
+        # Deduct the rest from regular balance by recording a transaction to a dummy account (not the company)
+        # Or simply do not record a transaction at all, just reduce the user's regular balance logically
+        # Here, we do NOT record a transaction to the company, so company regular balance is unaffected
+        pass
+    # Only add to company's investment_balance
     users[account]["investment_balance"] += total_cost
+    users[investor]['balance'] = users[investor].get('balance', 0) - total_cost
+    # Record the transaction
+    transactions.append({"sender": investor, "receiver": 'SYSTEM', "amount": total_cost, "transaction_id": f"buy_{investor}_{account}_{len(transactions)}"})
     if investor not in stocks:
         stocks[investor] = {}
     stocks[investor][account] = stocks[investor].get(account, 0) + shares
     return jsonify({"status": "Success", "message": f"Stock purchase successful. {investor} now owns {shares} shares in {account} at {price_per_share} per share."})
-
 @app.route("/pending_stock_sales", methods=["POST"])
 def pending_stock_sales_view():
     data = request.json

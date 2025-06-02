@@ -232,6 +232,7 @@ def open_dashboard(username):
     tk.Button(dashboard_frame, text="Sell Stock", command=sell_stock).pack()
 
     # --- Transfer Section ---
+    tk.Label(dashboard_frame, text="Transfer Currency").pack()
     tk.Label(dashboard_frame, text="Transfer To:").pack()
     receiver_entry = tk.Entry(dashboard_frame)
     receiver_entry.pack()
