@@ -97,16 +97,40 @@ def login():
         tk.Label(login_frame, text="Login Failed", fg="red").grid(row=2, columnspan=2)
 
 tk.Button(login_frame, text="Login", command=login).grid(row=3, columnspan=2)
-    
+
 def open_dashboard(username):
     dashboard_frame = tk.Frame(root)
     dashboard_frame.pack()
-    
-    tk.Label(dashboard_frame, text=f"Welcome, {username}").pack()
 
-    # --- Company Toggle Section ---
+    # --- Menu Bar ---
+    menu_bar = tk.Menu(root)
+    root.config(menu=menu_bar)
+    section_menu = tk.Menu(menu_bar, tearoff=0)
+    menu_bar.add_cascade(label="Menu", menu=section_menu)
+
+    # --- Frames for each section ---
+    general_frame = tk.Frame(dashboard_frame)
+    transaction_frame = tk.Frame(dashboard_frame)
+    stocks_frame = tk.Frame(dashboard_frame)
+
+    # --- General Section ---
+    tk.Label(general_frame, text=f"Welcome, {username}").pack()
+
     company_var = tk.StringVar()
-    investment_var = tk.StringVar()  # New: for displaying investment balance
+    investment_var = tk.StringVar()
+
+    def fetch_balance():
+        response = requests.post(f"{server_url}/balance", json={"username": username})
+        result = response.json()
+        if result["status"] == "Success":
+            balance_var.set(f"Current Balance: {result['balance']}")
+            if "investment_balance" in result:
+                investment_var.set(f"Investment Money: {result['investment_balance']}")
+            else:
+                investment_var.set("")
+        else:
+            balance_var.set("Balance: Error")
+            investment_var.set("")
 
     def fetch_company_status():
         resp = requests.post(f"{server_url}/is_company", json={"username": username})
@@ -118,129 +142,29 @@ def open_dashboard(username):
                 company_var.set("This account is a PERSONAL account")
         else:
             company_var.set("Error loading company status")
-    def toggle_company():
-        resp = requests.post(f"{server_url}/toggle_company", json={"username": username})
-        fetch_company_status()
-        fetch_balance()  # Also update investment balance
 
-    tk.Label(dashboard_frame, textvariable=company_var, fg="blue").pack()
-    tk.Button(dashboard_frame, text="Toggle Company Status", command=toggle_company).pack()
-    fetch_company_status()
+    def toggle_company():
+        requests.post(f"{server_url}/toggle_company", json={"username": username})
+        fetch_company_status()
+        fetch_balance()
+
+    tk.Label(general_frame, textvariable=company_var, fg="blue").pack()
+    tk.Button(general_frame, text="Toggle Company Status", command=toggle_company).pack()
 
     balance_var = tk.StringVar()
-    balance_label = tk.Label(dashboard_frame, textvariable=balance_var)
-    balance_label.pack()
+    tk.Label(general_frame, textvariable=balance_var).pack()
+    tk.Label(general_frame, textvariable=investment_var, fg="purple").pack()
+    tk.Button(general_frame, text="Reload Balance", command=fetch_balance).pack()
 
-    # New: Investment balance label
-    investment_label = tk.Label(dashboard_frame, textvariable=investment_var, fg="purple")
-    investment_label.pack()
-
-    def fetch_balance():
-        response = requests.post(f"{server_url}/balance", json={"username": username})
-        result = response.json()
-        if result["status"] == "Success":
-            balance_var.set(f"Current Balance: {result['balance']}")
-            # Show investment balance if company
-            if "investment_balance" in result:
-                investment_var.set(f"Investment Money: {result['investment_balance']}")
-            else:
-                investment_var.set("")
-        else:
-            balance_var.set("Balance: Error")
-            investment_var.set("")
-
-    # --- STOCKS SECTION ---
-    stocks_var = tk.StringVar()
-    def fetch_stocks():
-        # Use /my_stocks endpoint to get all your holdings
-        resp = requests.post(f"{server_url}/my_stocks", json={"investor": username})
-        info = resp.json()
-        if info["status"] == "Success":
-            holdings = []
-            for account, shares in info["holdings"].items():
-                holdings.append(f"{shares} shares in {account}")
-            stocks_var.set("Your Stocks: " + (", ".join(holdings) if holdings else "None"))
-        else:
-            stocks_var.set("Your Stocks: Error")
-
-    tk.Label(dashboard_frame, textvariable=stocks_var).pack()
-    tk.Button(dashboard_frame, text="Reload Stocks", command=fetch_stocks).pack()
-
-    # Buy Stock
-    tk.Label(dashboard_frame, text="Buy Stock in Account:").pack()
-    buy_account_entry = tk.Entry(dashboard_frame)
-    buy_account_entry.pack()
-    tk.Label(dashboard_frame, text="Shares:").pack()
-    buy_shares_entry = tk.Entry(dashboard_frame)
-    buy_shares_entry.pack()
-    buy_result = tk.Label(dashboard_frame, text="")
-    buy_result.pack()
-    def buy_stock():
-        account = buy_account_entry.get()
-        shares = buy_shares_entry.get()
-        try:
-            shares = int(shares)
-        except:
-            buy_result.config(text="Invalid share number", fg="red")
-            return
-        resp = requests.post(f"{server_url}/buy_stock", json={
-            "investor": username,
-            "account": account,
-            "shares": shares
-        })
-        result = resp.json()
-        if result["status"] == "Success":
-            buy_result.config(text=result["message"], fg="green")
-        elif result["status"] == "Pending":
-            buy_result.config(text=result["message"], fg="orange")
-        else:
-            buy_result.config(text=result["message"], fg="red")
-        fetch_balance()
-        fetch_stocks()
-    tk.Button(dashboard_frame, text="Buy Stock", command=buy_stock).pack()
-
-    # Sell Stock
-    tk.Label(dashboard_frame, text="Sell Stock in Account:").pack()
-    sell_account_entry = tk.Entry(dashboard_frame)
-    sell_account_entry.pack()
-    tk.Label(dashboard_frame, text="Shares:").pack()
-    sell_shares_entry = tk.Entry(dashboard_frame)
-    sell_shares_entry.pack()
-    sell_result = tk.Label(dashboard_frame, text="")
-    sell_result.pack()
-    def sell_stock():
-        account = sell_account_entry.get()
-        shares = sell_shares_entry.get()
-        try:
-            shares = int(shares)
-        except:
-            sell_result.config(text="Invalid share number", fg="red")
-            return
-        resp = requests.post(f"{server_url}/sell_stock", json={
-            "investor": username,
-            "account": account,
-            "shares": shares
-        })
-        result = resp.json()
-        if result["status"] == "Success":
-            sell_result.config(text=result["message"], fg="green")
-        else:
-            sell_result.config(text=result["message"], fg="red")
-        fetch_balance()
-        fetch_stocks()
-    tk.Button(dashboard_frame, text="Sell Stock", command=sell_stock).pack()
-
-    # --- Transfer Section ---
-    tk.Label(dashboard_frame, text="Transfer Currency").pack()
-    tk.Label(dashboard_frame, text="Transfer To:").pack()
-    receiver_entry = tk.Entry(dashboard_frame)
+    # --- Transaction Section ---
+    tk.Label(transaction_frame, text="Transfer Currency").pack()
+    tk.Label(transaction_frame, text="Transfer To:").pack()
+    receiver_entry = tk.Entry(transaction_frame)
     receiver_entry.pack()
-
-    tk.Label(dashboard_frame, text="Amount:").pack()
-    amount_entry = tk.Entry(dashboard_frame)
+    tk.Label(transaction_frame, text="Amount:").pack()
+    amount_entry = tk.Entry(transaction_frame)
     amount_entry.pack()
-
-    transfer_result = tk.Label(dashboard_frame, text="")
+    transfer_result = tk.Label(transaction_frame, text="")
     transfer_result.pack()
 
     def transfer():
@@ -265,13 +189,83 @@ def open_dashboard(username):
             transfer_result.config(text=message, fg="red")
         fetch_balance()  # Update balance after transfer
 
-    tk.Button(dashboard_frame, text="Transfer", command=transfer).pack()
-    tk.Button(dashboard_frame, text="Reload", command=fetch_balance).pack()
-    
+    tk.Button(transaction_frame, text="Transfer", command=transfer).pack()
+    tk.Button(transaction_frame, text="Reload Balance", command=fetch_balance).pack()
 
-    # --- Pending Stock Sales Approval Section ---
-    pending_var = tk.StringVar()
-    pending_listbox = tk.Listbox(dashboard_frame, width=60)
+    # --- Stocks Section ---
+    stocks_var = tk.StringVar()
+    tk.Label(stocks_frame, textvariable=stocks_var).pack()
+    tk.Button(stocks_frame, text="Reload Stocks", command=lambda: fetch_stocks()).pack()
+
+    tk.Label(stocks_frame, text="Buy Stock in Account:").pack()
+    buy_account_entry = tk.Entry(stocks_frame)
+    buy_account_entry.pack()
+    tk.Label(stocks_frame, text="Shares:").pack()
+    buy_shares_entry = tk.Entry(stocks_frame)
+    buy_shares_entry.pack()
+    buy_result = tk.Label(stocks_frame, text="")
+    buy_result.pack()
+
+    def buy_stock():
+        account = buy_account_entry.get()
+        shares = buy_shares_entry.get()
+        try:
+            shares = int(shares)
+        except:
+            buy_result.config(text="Invalid share number", fg="red")
+            return
+        resp = requests.post(f"{server_url}/buy_stock", json={
+            "investor": username,
+            "account": account,
+            "shares": shares
+        })
+        result = resp.json()
+        if result["status"] == "Success":
+            buy_result.config(text=result["message"], fg="green")
+        elif result["status"] == "Pending":
+            buy_result.config(text=result["message"], fg="orange")
+        else:
+            buy_result.config(text=result["message"], fg="red")
+        fetch_balance()
+        fetch_stocks()
+
+    tk.Button(stocks_frame, text="Buy Stock", command=buy_stock).pack()
+
+    tk.Label(stocks_frame, text="Sell Stock in Account:").pack()
+    sell_account_entry = tk.Entry(stocks_frame)
+    sell_account_entry.pack()
+    tk.Label(stocks_frame, text="Shares:").pack()
+    sell_shares_entry = tk.Entry(stocks_frame)
+    sell_shares_entry.pack()
+    sell_result = tk.Label(stocks_frame, text="")
+    sell_result.pack()
+
+    def sell_stock():
+        account = sell_account_entry.get()
+        shares = sell_shares_entry.get()
+        try:
+            shares = int(shares)
+        except:
+            sell_result.config(text="Invalid share number", fg="red")
+            return
+        resp = requests.post(f"{server_url}/sell_stock", json={
+            "investor": username,
+            "account": account,
+            "shares": shares
+        })
+        result = resp.json()
+        if result["status"] == "Success":
+            sell_result.config(text=result["message"], fg="green")
+        else:
+            sell_result.config(text=result["message"], fg="red")
+        fetch_balance()
+        fetch_stocks()
+
+    tk.Button(stocks_frame, text="Sell Stock", command=sell_stock).pack()
+
+    # Pending Stock Sales Approval Section
+    pending_listbox = tk.Listbox(stocks_frame, width=60)
+    pending_listbox.pack()
     def fetch_pending():
         resp = requests.post(f"{server_url}/pending_stock_sales", json={"account": username})
         info = resp.json()
@@ -283,8 +277,32 @@ def open_dashboard(username):
         else:
             pending_listbox.insert(tk.END, "Error loading pending requests")
 
-    fetch_balance()  # Show balance on dashboard open
-    fetch_stocks()   # Show stocks on dashboard open
-    fetch_pending()  # Show pending requests on dashboard open
+    def fetch_stocks():
+        resp = requests.post(f"{server_url}/my_stocks", json={"investor": username})
+        info = resp.json()
+        if info["status"] == "Success":
+            holdings = []
+            for account, shares in info["holdings"].items():
+                holdings.append(f"{shares} shares in {account}")
+            stocks_var.set("Your Stocks: " + (", ".join(holdings) if holdings else "None"))
+        else:
+            stocks_var.set("Your Stocks: Error")
+        fetch_pending()
+
+    # --- Section switching logic ---
+    def show_frame(frame):
+        for f in [general_frame, transaction_frame, stocks_frame]:
+            f.pack_forget()
+        frame.pack(fill="both", expand=True)
+
+    section_menu.add_command(label="General", command=lambda: show_frame(general_frame))
+    section_menu.add_command(label="Transaction", command=lambda: show_frame(transaction_frame))
+    section_menu.add_command(label="Stocks", command=lambda: show_frame(stocks_frame))
+
+    # --- Initial load ---
+    fetch_company_status()
+    fetch_balance()
+    fetch_stocks()
+    show_frame(general_frame)
 
 root.mainloop()
