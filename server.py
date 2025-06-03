@@ -113,10 +113,8 @@ def transfer_currency():
     deduct_investment = min(investment_balance, amount)
     users[sender]["investment_balance"] -= deduct_investment
     deduct_regular = amount - deduct_investment
-    if deduct_regular > 0:
-        transactions.append({"sender": sender, "receiver": receiver, "amount": deduct_regular, "transaction_id": transaction_id})
-    else:
-        transactions.append({"sender": sender, "receiver": receiver, "amount": amount, "transaction_id": transaction_id})
+    # No matter the split, always record the full transaction for the receiver
+    transactions.append({"sender": sender, "receiver": receiver, "amount": amount, "transaction_id": transaction_id})
 
     return jsonify({"status": "Success", "message": "Transaction successful!"})
 

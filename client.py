@@ -97,8 +97,7 @@ def login():
         tk.Label(login_frame, text="Login Failed", fg="red").grid(row=2, columnspan=2)
 
 tk.Button(login_frame, text="Login", command=login).grid(row=3, columnspan=2)
-
-# Dashboard
+    
 def open_dashboard(username):
     dashboard_frame = tk.Frame(root)
     dashboard_frame.pack()
