@@ -16,13 +16,14 @@ client.py:
 Also needed (likely pre-installed)
 <code>tkinter</code>
 <code>os</code>
-<code>tkinter</code>
 <code>random</code>
 
 ## Features
 
-Alongside the features in simple-banking, this has added the option for an account to be an investable entity, and allows for investment in these entities.
+Alongside the features in simple-banking, this has added the option for an account to become a public company, and allows for the buying of these company's shares by any account.
 
-## Next Commit
+## Next Update
 
-The next commit will be adding automatic share price tracking and line charts.
+The next update will be adding automatic share price tracking and line charts.
+
+We... hope. Hope.
