@@ -5,6 +5,10 @@ import hashlib
 
 app = Flask(__name__)
 
+import json
+
+DATA_FILE = "server_data.json"
+
 # Simulated Database
 users = {}  # {"username": {"password": ..., "public_key": ..., "is_company": False, "investment_balance": 0}}
 transactions = []  # Stores transactions
@@ -14,6 +18,7 @@ INITIAL_BALANCE = 50  # New accounts start with 50
 stocks = {}  # e.g., {"alice": {"bob": 3, "charlie": 2}}
 
 pending_stock_sales = []  # Each item: {"investor": ..., "account": ..., "shares": ..., "request_id": ...}
+
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -37,7 +42,7 @@ def register():
     users[username] = {"password": password, "public_key": public_key, "is_company": False, "investment_balance": 0}
     # Give initial balance by creating a "system" transaction
     transactions.append({"sender": "SYSTEM", "receiver": username, "amount": INITIAL_BALANCE, "transaction_id": f"init_{username}"})
-    
+
     return jsonify({"status": "Success", "message": "Account created!"})
 
 @app.route("/toggle_company", methods=["POST"])
@@ -112,12 +117,22 @@ def transfer_currency():
     # Deduct from investment_balance first, then from regular balance
     deduct_investment = min(investment_balance, amount)
     users[sender]["investment_balance"] -= deduct_investment
-    deduct_regular = amount - deduct_investment
-    # No matter the split, always record the full transaction for the receiver
-    transactions.append({"sender": sender, "receiver": receiver, "amount": amount, "transaction_id": transaction_id})
+    # The rest comes from regular balance (no need to manually set, tracked by transactions)
+    # Always record the full transaction for the receiver
+    transactions.append({
+        "sender": sender,
+        "receiver": receiver,
+        "amount": amount - deduct_investment,
+        "transaction_id": transaction_id
+    })
+    transactions.append({
+        "sender": "SYSTEM" if deduct_investment > 0 else sender,
+        "receiver": receiver,
+        "amount": deduct_investment,
+        "transaction_id": f"deduct_{sender}_{receiver}_{transaction_id}"
+    })
 
     return jsonify({"status": "Success", "message": "Transaction successful!"})
-
 @app.route("/balance", methods=["POST"])
 def balance():
     data = request.json
@@ -162,7 +177,7 @@ def buy_stock():
             company_balance += int(tx["amount"])
         if tx["sender"] == account:
             company_balance -= int(tx["amount"])
-    price_per_share = company_balance / 100 if company_balance > 0 else 0
+    price_per_share = company_balance / 100 * (0.5 + (100 - stocks.get(account, {}).get(account, 0)) / 100) if company_balance > 0 else 0
     if price_per_share <= 0:
         return jsonify({"status": "Failure", "message": "Company has no value, cannot buy shares"})
     total_cost = shares * price_per_share
@@ -275,7 +290,7 @@ def sell_stock():
     # Only allow selling to companies
     if not users[account].get("is_company", False):
         return jsonify({"status": "Failure", "message": "You can only sell shares of companies"})
-    price_per_share = company_balance / 100 if company_balance > 0 else 0
+    price_per_share = company_balance / 100 * (0.5 + (100 - stocks.get(account, {}).get(account, 0)) / 100) if company_balance > 0 else 0
     if price_per_share <= 0:
         return jsonify({"status": "Failure", "message": "Company has no value, cannot sell shares"})
     total_payout = shares * price_per_share
