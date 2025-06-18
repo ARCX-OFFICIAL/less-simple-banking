@@ -4,9 +4,15 @@ import requests
 import random
 from cryptography.hazmat.primitives.asymmetric import dsa
 from cryptography.hazmat.primitives import hashes, serialization
+# Add matplotlib imports
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import threading
+import time
 
 server_url = "http://localhost:5000"
 KEY_FILE = "client_private_key.pem"
+client_private_key = KEY_FILE
 
 # Load or generate Client's DSA Private Key and save/load from file
 if os.path.exists(KEY_FILE):
@@ -112,6 +118,8 @@ def open_dashboard(username):
     general_frame = tk.Frame(dashboard_frame)
     transaction_frame = tk.Frame(dashboard_frame)
     stocks_frame = tk.Frame(dashboard_frame)
+    # Add share price frame
+    share_price_frame = tk.Frame(dashboard_frame)
 
     # --- General Section ---
     tk.Label(general_frame, text=f"Welcome, {username}").pack()
@@ -171,7 +179,7 @@ def open_dashboard(username):
         receiver = receiver_entry.get()
         amount = amount_entry.get()
         transaction_id = random.randint(100000, 999999)
-        transaction_data = f"{username}-{receiver}-{amount}-{transaction_id}"
+        transaction_data = f"{username}-{receiver}-{float(amount)}-{transaction_id}"
         signature = client_private_key.sign(transaction_data.encode(), hashes.SHA256())
 
         response = requests.post(f"{server_url}/transfer_currency", json={
@@ -289,20 +297,119 @@ def open_dashboard(username):
             stocks_var.set("Your Stocks: Error")
         fetch_pending()
 
+    # --- Share Price Section ---
+    tk.Label(share_price_frame, text="Share Price Chart", font=("Segoe UI", 14, "bold")).pack(pady=(10, 5))
+    tk.Label(share_price_frame, text="Company Name:").pack()
+    company_entry = tk.Entry(share_price_frame)
+    company_entry.pack()
+    chart_canvas = None
+    fig = None
+    ax = None
+    price_history = []
+    time_history = []
+    update_thread = None
+    stop_update = threading.Event()
+
+    def fetch_share_price(company):
+        try:
+            resp = requests.post(f"{server_url}/share_price", json={"company": company})
+            data = resp.json()
+            if data["status"] == "Success":
+                return float(data["price"])
+            else:
+                return None
+        except Exception:
+            return None
+
+    def update_chart():
+        nonlocal chart_canvas, fig, ax
+        company = company_entry.get()
+        if not company:
+            return
+        price = fetch_share_price(company)
+        if price is not None:
+            price_history.append(price)
+            time_history.append(time.strftime("%H:%M:%S"))
+            if len(price_history) > 30:
+                price_history.pop(0)
+                time_history.pop(0)
+        # Create figure and axis only once
+        if fig is None or ax is None:
+            fig, ax = plt.subplots(figsize=(5, 2.5), dpi=100)
+            fig.tight_layout()
+        ax.clear()
+        ax.plot(time_history, price_history, marker='o', color='blue')
+        ax.set_title(f"Share Price: {company}")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Price")
+        ax.tick_params(axis='x', rotation=45)
+        ax.set_ylim(0, 200)  # Set y-axis range
+        ax.set_xlim(0, 100)
+        # Always ensure chart_canvas uses the current fig
+        if chart_canvas is None or chart_canvas.figure != fig:
+            if chart_canvas:
+                chart_canvas.get_tk_widget().destroy()
+            chart_canvas = FigureCanvasTkAgg(fig, master=share_price_frame)
+            chart_canvas.get_tk_widget().pack(pady=10)
+        chart_canvas.draw()
+
+    def periodic_update():
+        while not stop_update.is_set():
+            root.after(0, update_chart)
+            for _ in range(60):
+                if stop_update.is_set():
+                    break
+                time.sleep(1)
+
+    def start_share_price():
+        nonlocal update_thread, price_history, time_history, fig, ax, chart_canvas
+        stop_share_price()
+        price_history.clear()
+        time_history.clear()
+        fig = None
+        ax = None
+        if chart_canvas:
+            chart_canvas.get_tk_widget().destroy()
+            chart_canvas = None
+        update_chart()
+        stop_update.clear()
+        if update_thread and update_thread.is_alive():
+            return
+        update_thread = threading.Thread(target=periodic_update, daemon=True)
+        update_thread.start()
+
+    tk.Button(share_price_frame, text="Show Chart", command=start_share_price).pack(pady=5)
+
+    def stop_share_price():
+        stop_update.set()
+
     # --- Section switching logic ---
     def show_frame(frame):
-        for f in [general_frame, transaction_frame, stocks_frame]:
+        for f in [general_frame, transaction_frame, stocks_frame, share_price_frame]:
             f.pack_forget()
         frame.pack(fill="both", expand=True)
 
     section_menu.add_command(label="General", command=lambda: show_frame(general_frame))
     section_menu.add_command(label="Transaction", command=lambda: show_frame(transaction_frame))
     section_menu.add_command(label="Stocks", command=lambda: show_frame(stocks_frame))
+    section_menu.add_command(label="Share Price", command=lambda: show_frame(share_price_frame))
 
     # --- Initial load ---
     fetch_company_status()
     fetch_balance()
     fetch_stocks()
     show_frame(general_frame)
+
+    # Stop share price updates when switching away
+    def on_section_change(frame):
+        if frame != share_price_frame:
+            stop_share_price()
+        show_frame(frame)
+
+    # Replace section_menu commands to use on_section_change
+    section_menu.entryconfig("General", command=lambda: on_section_change(general_frame))
+    section_menu.entryconfig("Transaction", command=lambda: on_section_change(transaction_frame))
+    section_menu.entryconfig("Stocks", command=lambda: on_section_change(stocks_frame))
+    section_menu.entryconfig("Share Price", command=lambda: on_section_change(share_price_frame))
 
 root.mainloop()

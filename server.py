@@ -10,7 +10,7 @@ import json
 DATA_FILE = "server_data.json"
 
 # Simulated Database
-users = {}  # {"username": {"password": ..., "public_key": ..., "is_company": False, "investment_balance": 0}}
+users = {}  # {"username": {"password": ..., "public_key": ..., "is_company": False}}
 transactions = []  # Stores transactions
 INITIAL_BALANCE = 50  # New accounts start with 50
 
@@ -39,7 +39,7 @@ def register():
     except Exception as e:
         return jsonify({"status": "Failure", "message": "Invalid public key"})
     
-    users[username] = {"password": password, "public_key": public_key, "is_company": False, "investment_balance": 0}
+    users[username] = {"password": password, "public_key": public_key, "is_company": False}
     # Give initial balance by creating a "system" transaction
     transactions.append({"sender": "SYSTEM", "receiver": username, "amount": INITIAL_BALANCE, "transaction_id": f"init_{username}"})
 
@@ -101,35 +101,22 @@ def transfer_currency():
     except Exception as e:
         return jsonify({"status": "Failure", "message": "Invalid signature"})
 
-    # Calculate sender's regular balance (not investment)
-    regular_balance = 0
+    # Calculate sender's balance
+    balance = 0
     for tx in transactions:
         if tx["receiver"] == sender:
-            regular_balance += float(tx["amount"])
+            balance += float(tx["amount"])
         if tx["sender"] == sender:
-            regular_balance -= float(tx["amount"])
-    investment_balance = users[sender].get("investment_balance", 0)
-    total_balance = regular_balance + investment_balance
+            balance -= float(tx["amount"])
 
-    if total_balance < amount:
+    if balance < amount:
         return jsonify({"status": "Failure", "message": "Insufficient funds"})
 
-    # Deduct from investment_balance first, then from regular balance
-    deduct_investment = min(investment_balance, amount)
-    users[sender]["investment_balance"] -= deduct_investment
-    # The rest comes from regular balance (no need to manually set, tracked by transactions)
-    # Always record the full transaction for the receiver
     transactions.append({
         "sender": sender,
         "receiver": receiver,
-        "amount": amount - deduct_investment,
+        "amount": amount,
         "transaction_id": transaction_id
-    })
-    transactions.append({
-        "sender": "SYSTEM" if deduct_investment > 0 else sender,
-        "receiver": receiver,
-        "amount": deduct_investment,
-        "transaction_id": f"deduct_{sender}_{receiver}_{transaction_id}"
     })
 
     return jsonify({"status": "Success", "message": "Transaction successful!"})
@@ -146,8 +133,7 @@ def balance():
             balance += float(tx["amount"])
         if tx["sender"] == username:
             balance -= float(tx["amount"])
-    investment_balance = users[username].get("investment_balance", 0)
-    return jsonify({"status": "Success", "balance": balance + investment_balance, "investment_balance": investment_balance})
+    return jsonify({"status": "Success", "balance": balance})
 
 @app.route("/buy_stock", methods=["POST"])
 def buy_stock():
@@ -157,117 +143,49 @@ def buy_stock():
     shares = float(data["shares"])
     if investor not in users or account not in users:
         return jsonify({"status": "Failure", "message": "Invalid investor or account"})
-    if shares <= 0:
-        return jsonify({"status": "Failure", "message": "Shares must be positive"})
+    if shares <= 0 or int(shares) != shares:
+        return jsonify({"status": "Failure", "message": "Shares must be a positive integer"})
+    shares = int(shares)
     # Only allow buying stock in companies
     if not users[account].get("is_company", False):
         return jsonify({"status": "Failure", "message": "You can only invest in companies"})
-    # Calculate investor balance (main + investment)
+    # Calculate investor balance
     balance = 0
     for tx in transactions:
         if tx["receiver"] == investor:
             balance += float(tx["amount"])
         if tx["sender"] == investor:
             balance -= float(tx["amount"])
-    balance += users[investor].get("investment_balance", 0)
-    # Calculate company regular balance for price
-    company_balance = 0
-    for tx in transactions:
-        if tx["receiver"] == account:
-            company_balance += float(tx["amount"])
-        if tx["sender"] == account:
-            company_balance -= float(tx["amount"])
-    price_per_share = company_balance / 100 * (0.5 + (100 - stocks.get(account, {}).get(account, 0)) / 100) if company_balance > 0 else 0
-    if price_per_share <= 0:
-        return jsonify({"status": "Failure", "message": "Company has no value, cannot buy shares"})
-    total_cost = shares * price_per_share
-    if balance < total_cost:
-        return jsonify({"status": "Failure", "message": "Insufficient funds"})
     # Company must have enough shares to sell (max 100, decremented on sale)
     owned = stocks.get(account, {}).get(account, 0)
     if owned < shares:
         return jsonify({"status": "Failure", "message": "Company does not have enough shares to sell"})
-    stocks[account][account] -= shares
-    if stocks[account][account] == 0:
-        del stocks[account][account]
-    # Deduct from investor's investment_balance first, then main balance
-    deduct = min(users[investor].get("investment_balance", 0), total_cost)
-    users[investor]["investment_balance"] -= deduct
-    remaining = total_cost - deduct
-    if remaining > 0:
-        # Deduct the rest from regular balance by recording a transaction to a dummy account (not the company)
-        # Or simply do not record a transaction at all, just reduce the user's regular balance logically
-        # Here, we do NOT record a transaction to the company, so company regular balance is unaffected
-        pass
-    # Only add to company's investment_balance
-    users[account]["investment_balance"] += total_cost
-    users[investor]['balance'] = users[investor].get('balance', 0) - total_cost
-    # Record the transaction
-    print(total_cost)
-    transactions.append({"sender": investor, "receiver": 'SYSTEM', "amount": total_cost, "transaction_id": f"buy_{investor}_{account}_{len(transactions)}"})
-    if investor not in stocks:
-        stocks[investor] = {}
-    stocks[investor][account] = stocks[investor].get(account, 0) + shares
-    print(users[investor]['balance'])
-    return jsonify({"status": "Success", "message": f"Stock purchase successful. {investor} now owns {shares} shares in {account} at {price_per_share} per share."})
-@app.route("/pending_stock_sales", methods=["POST"])
-def pending_stock_sales_view():
-    data = request.json
-    account = data["account"]
-    # Only show pending requests for non-companies (companies have no pending sales)
-    if users.get(account, {}).get("is_company", False):
-        return jsonify({"status": "Success", "pending": []})
-    requests = [req for req in pending_stock_sales if req["account"] == account]
-    return jsonify({"status": "Success", "pending": requests})
-
-@app.route("/approve_stock_sale", methods=["POST"])
-def approve_stock_sale():
-    data = request.json
-    account = data["account"]
-    request_id = data["request_id"]
-    approve = data["approve"]  # True/False
-    balance = 0
-    for tx in transactions:
-        if tx["receiver"] == investor:
-            balance += float(tx["amount"])
-        if tx["sender"] == investor:
-            balance -= float(tx["amount"])
-    # If account is a company, do not allow approval (should not happen)
-    if users.get(account, {}).get("is_company", False):
-        return jsonify({"status": "Failure", "message": "Company accounts do not require approval"})
-    # Find the pending request
-    req = next((r for r in pending_stock_sales if r["request_id"] == request_id and r["account"] == account), None)
-    if not req:
-        return jsonify({"status": "Failure", "message": "Request not found"})
-    if not approve:
-        pending_stock_sales.remove(req)
-        return jsonify({"status": "Rejected", "message": "Stock sale rejected"})
-    investor = req["investor"]
-    shares = req["shares"]
-    total_cost = req["total_cost"]
-    if investor not in users or account not in users:
-        pending_stock_sales.remove(req)
-        return jsonify({"status": "Failure", "message": "Invalid investor or account"})
-
-    balance += users[investor].get("investment_balance", 0)
-    if balance < total_cost:
-        pending_stock_sales.remove(req)
-        return jsonify({"status": "Failure", "message": "Investor has insufficient funds"})
-    # Account must have enough shares to sell (if not SYSTEM)
-    if account != "SYSTEM":
-        owned = stocks.get(account, {}).get(account, 0)
-        if owned < shares:
-            pending_stock_sales.remove(req)
-            return jsonify({"status": "Failure", "message": "Account does not have enough shares to sell"})
-        stocks[account][account] -= shares
+    total_cost = 0
+    for i in range(shares):
+        # Calculate company regular balance for price
+        company_balance = 0
+        for tx in transactions:
+            if tx["receiver"] == account:
+                company_balance += float(tx["amount"])
+            if tx["sender"] == account:
+                company_balance -= float(tx["amount"])
+        price_per_share = company_balance / 100 * (0.5 + (100 - stocks.get(account, {}).get(account, 0)) / 100) if company_balance > 0 else 0
+        if price_per_share <= 0:
+            return jsonify({"status": "Failure", "message": "Company has no value, cannot buy shares"})
+        if balance < price_per_share:
+            return jsonify({"status": "Failure", "message": "Insufficient funds"})
+        # Deduct one share
+        stocks[account][account] -= 1
         if stocks[account][account] == 0:
             del stocks[account][account]
-    transactions.append({"sender": investor, "receiver": account, "amount": total_cost, "transaction_id": f"buy_{investor}_{account}_{len(transactions)}"})
-    if investor not in stocks:
-        stocks[investor] = {}
-    stocks[investor][account] = stocks[investor].get(account, 0) + shares
-    pending_stock_sales.remove(req)
-    return jsonify({"status": "Success", "message": f"Stock sale approved. {investor} now owns {shares} shares in {account}."})
+        # Payment goes to company
+        transactions.append({"sender": investor, "receiver": account, "amount": price_per_share, "transaction_id": f"buy_{investor}_{account}_{len(transactions)}"})
+        if investor not in stocks:
+            stocks[investor] = {}
+        stocks[investor][account] = stocks[investor].get(account, 0) + 1
+        balance -= price_per_share
+        total_cost += price_per_share
+    return jsonify({"status": "Success", "message": f"Stock purchase successful. {investor} bought {shares} shares in {account} for a total of {total_cost}."})
 
 @app.route("/sell_stock", methods=["POST"])
 def sell_stock():
@@ -275,43 +193,43 @@ def sell_stock():
     investor = data["investor"]
     account = data["account"]
     shares = float(data["shares"])
-    # Calculate company regular balance for price
-    company_balance = 0
-    for tx in transactions:
-        if tx["receiver"] == account:
-            company_balance += float(tx["amount"])
-        if tx["sender"] == account:
-            company_balance -= float(tx["amount"])
     if investor not in users or account not in users:
         return jsonify({"status": "Failure", "message": "Invalid investor or account"})
-    if shares <= 0:
-        return jsonify({"status": "Failure", "message": "Shares must be positive"})
+    if shares <= 0 or int(shares) != shares:
+        return jsonify({"status": "Failure", "message": "Shares must be a positive integer"})
+    shares = int(shares)
     owned = stocks.get(investor, {}).get(account, 0)
     if owned < shares:
         return jsonify({"status": "Failure", "message": "Not enough shares to sell"})
     # Only allow selling to companies
     if not users[account].get("is_company", False):
         return jsonify({"status": "Failure", "message": "You can only sell shares of companies"})
-    price_per_share = company_balance / 100 * (0.5 + (100 - stocks.get(account, {}).get(account, 0)) / 100) if company_balance > 0 else 0
-    if price_per_share <= 0:
-        return jsonify({"status": "Failure", "message": "Company has no value, cannot sell shares"})
-    total_payout = shares * price_per_share
-    print(f"Total payout for {shares} shares at {price_per_share} per share: {total_payout}")
-    # Check if company has enough regular balance
-    if company_balance < total_payout:
-        return jsonify({"status": "Failure", "message": "Company does not have enough regular funds to buy back shares"})
-
-    # Remove shares from investor
-    stocks[investor][account] -= shares
-    if stocks[investor][account] == 0:
-        del stocks[investor][account]
-    # Return shares to company
-    if account not in stocks:
-        stocks[account] = {}
-    stocks[account][account] = stocks[account].get(account, 0) + shares
-    # Pay investor from company's regular balance (record transaction)
-    transactions.append({"sender": account, "receiver": investor, "amount": total_payout, "transaction_id": f"sell_{investor}_{account}_{len(transactions)}"})
-    return jsonify({"status": "Success", "message": f"Sold {shares} shares of {account} at {price_per_share} per share."})
+    total_payout = 0
+    for i in range(shares):
+        # Calculate company regular balance for price
+        company_balance = 0
+        for tx in transactions:
+            if tx["receiver"] == account:
+                company_balance += float(tx["amount"])
+            if tx["sender"] == account:
+                company_balance -= float(tx["amount"])
+        price_per_share = company_balance / 100 * (0.5 + (100 - stocks.get(account, {}).get(account, 0)) / 100) if company_balance > 0 else 0
+        if price_per_share <= 0:
+            return jsonify({"status": "Failure", "message": "Company has no value, cannot sell shares"})
+        if company_balance < price_per_share:
+            return jsonify({"status": "Failure", "message": "Company does not have enough regular funds to buy back shares"})
+        # Remove one share from investor
+        stocks[investor][account] -= 1
+        if stocks[investor][account] == 0:
+            del stocks[investor][account]
+        # Return one share to company
+        if account not in stocks:
+            stocks[account] = {}
+        stocks[account][account] = stocks[account].get(account, 0) + 1
+        # Pay investor from company's regular balance (record transaction)
+        transactions.append({"sender": account, "receiver": investor, "amount": price_per_share, "transaction_id": f"sell_{investor}_{account}_{len(transactions)}"})
+        total_payout += price_per_share
+    return jsonify({"status": "Success", "message": f"Sold {shares} shares of {account} for a total of {total_payout}."})
 
 @app.route("/stock_info", methods=["POST"])
 def stock_info():
@@ -334,6 +252,23 @@ def my_stocks():
         return jsonify({"status": "Failure", "message": "Invalid investor"})
     holdings = stocks.get(investor, {})
     return jsonify({"status": "Success", "holdings": holdings})
+
+@app.route("/share_price", methods=["POST"])
+def share_price():
+    data = request.json
+    company = data["company"]
+    if company not in users or not users[company].get("is_company", False):
+        return jsonify({"status": "Failure", "message": "Invalid company"})
+    # Calculate company regular balance for price
+    company_balance = 0
+    for tx in transactions:
+        if tx["receiver"] == company:
+            company_balance += float(tx["amount"])
+        if tx["sender"] == company:
+            company_balance -= float(tx["amount"])
+    shares_left = stocks.get(company, {}).get(company, 0)
+    price = company_balance / 100 * (0.5 + (100 - shares_left) / 100) if company_balance > 0 else 0
+    return jsonify({"status": "Success", "price": price})
 
 if __name__ == "__main__":
     app.run(port=5000, debug=True)
