@@ -411,5 +411,3 @@ def open_dashboard(username):
     section_menu.entryconfig("Transaction", command=lambda: on_section_change(transaction_frame))
     section_menu.entryconfig("Stocks", command=lambda: on_section_change(stocks_frame))
     section_menu.entryconfig("Share Price", command=lambda: on_section_change(share_price_frame))
-
-root.mainloop()
