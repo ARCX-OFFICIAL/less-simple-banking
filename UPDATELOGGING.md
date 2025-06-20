@@ -1,10 +1,8 @@
 # Update Logger
 
-Yeah, we didn't add stock price tracking. But we did just add supply and demand!
+We added everything! We even managed a workaround for investment money!
 
 
 ## Next Update
 
-The next update will be adding automatic share price tracking and line charts.
-
-We... hope. Hope. LOL.
+TBD, すみません。
