@@ -1,8 +1,8 @@
 # Update Logger
 
-We added everything! We even managed a workaround for investment money!
+Made GUI look nicer, and added a simple animation/logo using manim.
 
 
 ## Next Update
 
-TBD, すみません。
+Updating client.exe.
