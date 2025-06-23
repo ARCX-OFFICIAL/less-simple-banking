@@ -1,0 +1,7 @@
+# This file is used internally by FFMPEG.
+file 'file:C:/LessSimpleBanking/media/videos/1080p60/partial_movie_files/LessSimpleBankingIntro/103678982_1855649551_223132457.mp4'
+file 'file:C:/LessSimpleBanking/media/videos/1080p60/partial_movie_files/LessSimpleBankingIntro/385056244_2309341244_704466941.mp4'
+file 'file:C:/LessSimpleBanking/media/videos/1080p60/partial_movie_files/LessSimpleBankingIntro/385056244_3466361621_3419978717.mp4'
+file 'file:C:/LessSimpleBanking/media/videos/1080p60/partial_movie_files/LessSimpleBankingIntro/385056244_2299622275_1812592164.mp4'
+file 'file:C:/LessSimpleBanking/media/videos/1080p60/partial_movie_files/LessSimpleBankingIntro/385056244_2035541224_138669923.mp4'
+file 'file:C:/LessSimpleBanking/media/videos/1080p60/partial_movie_files/LessSimpleBankingIntro/385056244_4217992463_1497157819.mp4'
